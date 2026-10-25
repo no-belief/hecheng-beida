@@ -127,11 +127,11 @@ for(var i=0;i<TIERS.length;i++){
 }
 
 /* ================= 昵称 & 排行榜 ================= */
-/* 云端排行榜: extendsclass JSON 存储(CORS 开放,静态托管可直连)
-   bin 数据: { meta:{...}, scores:[{name,score,ts,dev}] }
-   读取 GET /bin/dbfbdfb;写入 PUT /bin/dbfbdfb(整体替换)
-   竞争窗口内并发的写入可能相互覆盖,故写入采用 读取→合并→写回 重试策略 */
-var API='https://extendsclass.com/api/json-storage/bin/dbfbdfb';
+/* 云端排行榜: restful-api.dev 匿名对象存储(CORS 全开放,浏览器可直连读写)
+   对象: {id, name, data:{scores:[{name,score,dev,ts}]}}
+   读取 GET /objects/<id>;写入 PUT /objects/<id>(读→合并→写回,带重试)
+   该服务实测: GET/PUT/OPTIONS 预检全部通过 Access-Control-Allow-Origin: * */
+var API='https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911';
 var NICK_KEY='hcbd_nick';
 var DEV_KEY='hcbd_dev';
 var NICK_A=['快乐的','努力的','佛系的','爱睡觉的','北大路的','未名湖的','博雅塔的','图书馆的','燕园的','自习的','卷王的','摸鱼的','干饭的','冲刺的','散步的','爬山的'];
@@ -211,10 +211,10 @@ function renderLB(scores){
   list.innerHTML=html;
 }
 
-/* 读取远端仓并排序(云端为裸数组,排序在本端进行) */
+/* 读取远端对象并排序 */
 function loadLeaderboard(){
   fetch(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
-    var scores=Array.isArray(data)?data:(Array.isArray(data.scores)?data.scores:[]);
+    var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
     scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
     scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
     scores=scores.slice(0,50);
@@ -238,13 +238,13 @@ function submitScore(){
   var attempt=function(tries){
     if(tries<=0)return;
     fetch(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
-      var scores=Array.isArray(data)?data:(Array.isArray(data.scores)?data.scores:[]);
+      var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
       scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
       scores.push(entry);
       scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
       scores=scores.slice(0,200);
-      return fetch(API,{method:'PUT',headers:{'Content-Type':'text/plain;charset=UTF-8'},
-        body:JSON.stringify(scores)}).then(function(r2){
+      return fetch(API,{method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
+        body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})}).then(function(r2){
         if(r2.ok){pendingRank=scores.indexOf(entry)+1;rankTotal=scores.length;loadLeaderboard();}
         else return attempt(tries-1);
       });
