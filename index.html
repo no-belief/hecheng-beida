@@ -93,6 +93,9 @@ var GT=62, GB=H-48;
 var DANGER_Y=GT+30;
 var DANGER_DELAY=1350;
 
+/* 演示模式: ?demo=1 时从 9/10 级球开始,几次合成即可合成北大 */
+var DEMO=/[?&]demo=1/.test(location.search);
+
 var GRAVITY=2.0;
 var RESTITUTION=0.1;
 var FRICTION=0.08;
@@ -228,6 +231,7 @@ function loadLeaderboard(){
 
 /* 写入: 读取→合并→排序→写回,带重试;单玩家连续写有防抖 */
 function submitScore(){
+  if(DEMO) return; /* 演示模式不污染真实排行榜 */
   if(scoreSubmitted||score<=0)return;
   scoreSubmitted=true;
   var entry={name:nick,score:score,dev:dev,ts:Date.now()};
@@ -288,7 +292,17 @@ var maxReached=0;
 var dangerTimer=0, dangerNear=false;
 var mergeQueue=[];
 
-function rndT(){return Math.floor(Math.random()*SPAWN_COUNT);}
+function rndT(){
+  if(DEMO){
+    /* 演示模式: 等级分布 0:0, 1-8:0, 9-10 各 25%, 11 50% */
+    var r=Math.random();
+    if(r<0.5) return 11;      /* 清华 */
+    if(r<0.75) return 10;     /* 中科 */
+    if(r<0.9) return 9;       /* 浙大 */
+    return 8;                 /* 上交 */
+  }
+  return Math.floor(Math.random()*SPAWN_COUNT);
+}
 
 Events.on(engine,'collisionStart',function(ev){
   for(var i=0;i<ev.pairs.length;i++){
@@ -363,6 +377,29 @@ function drop(){
   setTimeout(function(){
     if(!over){cur=nxt;nxt=rndT();canDrop=true;}
   },DROP_CD);
+}
+
+/* 演示模式: 自动播放,持续瞄准落点 */
+if(DEMO){
+  setInterval(function(){
+    if(!started||over) return;
+    /* 扫描一个空隙列,投到最左边或最右边,让同级球尽量相邻 */
+    var best=-1,bestGap=-1;
+    for(var col=0;col<3;col++){
+      var cx=GL+30+(GR-GL-60)*col/2;
+      var maxY=GT;
+      for(var i=0;i<balls.length;i++){
+        var b=balls[i];
+        if(Math.abs(b.body.position.x-cx)<TIERS[b.tier].r+8){
+          if(b.body.position.y>maxY) maxY=b.body.position.y;
+        }
+      }
+      var gap=(GB-maxY);
+      if(gap>bestGap){bestGap=gap;best=cx;}
+    }
+    if(best>0) aimX=best;
+    drop();
+  },460);
 }
 
 function toCanvasX(cx){var rc=cv.getBoundingClientRect();return(cx-rc.left)/rc.width*W;}
