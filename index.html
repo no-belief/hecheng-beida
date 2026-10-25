@@ -211,9 +211,18 @@ function renderLB(scores){
   list.innerHTML=html;
 }
 
+/* 带超时的 fetch */
+function fetchT(url,opts){
+  var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
+  if(ctrl) opts=Object.assign({},opts,{signal:ctrl.signal});
+  var timer=ctrl?setTimeout(function(){ctrl.abort();},12000):null;
+  return fetch(url,opts).then(function(r){if(timer)clearTimeout(timer);return r;},
+    function(e){if(timer)clearTimeout(timer);throw e;});
+}
+
 /* 读取远端对象并排序 */
 function loadLeaderboard(){
-  fetch(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
+  fetchT(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
     var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
     scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
     scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
@@ -237,20 +246,20 @@ function submitScore(){
   var entry={name:nick,score:score,dev:dev,ts:Date.now()};
   var attempt=function(tries){
     if(tries<=0)return;
-    fetch(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
+    fetchT(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
       var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
       scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
       scores.push(entry);
       scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
       scores=scores.slice(0,200);
-      return fetch(API,{method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
+      return fetchT(API,{method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
         body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})}).then(function(r2){
         if(r2.ok){pendingRank=scores.indexOf(entry)+1;rankTotal=scores.length;loadLeaderboard();}
         else return attempt(tries-1);
       });
-    }).catch(function(){setTimeout(function(){attempt(tries-1);},800);});
+    }).catch(function(){setTimeout(function(){attempt(tries-1);},1500);});
   };
-  attempt(4);
+  attempt(5);
 }
 setInterval(loadLeaderboard,5000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)loadLeaderboard();});
