@@ -230,11 +230,11 @@ function parseScores(data){
   return scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
 }
 
-/* 读取: GitHub scores.json(极稳),ntfy 实时流作为补充(SSE,超时自动放弃) */
+/* 读取: GitHub scores.json(极稳);SSE 实时流按需启用(网络差时自动失效) */
 var liveScores=[];
 function startNtfyStream(){
   try{
-    var es=new EventSource(NTFY+'/json?since=all');
+    var es=new EventSource(NTFY+'/json?since=all&poll=1');
     es.onmessage=function(ev){
       try{
         var m=JSON.parse(ev.data);
