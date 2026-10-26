@@ -29,8 +29,9 @@ jobs:
           git config user.email "actions@github.com"
           if ! git diff --quiet scores.json; then
             git add scores.json
-            git commit -m "sync scores [skip ci]"
-            git push
+            git commit -m "sync scores [skip ci]" || true
+            git pull --rebase origin main || true
+            git push origin main || true
           fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
