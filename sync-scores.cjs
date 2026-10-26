@@ -20,6 +20,7 @@ async function sync() {
   const merged = [];
   for (const s of existing.scores) {
     if (!s || !s.name || (s.score | 0) <= 0) continue;
+    if (s.dev === 'seed' || s.dev === 'unknown') continue; /* 过滤测试/无效数据 */
     const key = s.dev + '|' + s.ts + '|' + s.score;
     if (!seen[key]) { seen[key] = 1; merged.push(s); }
   }
@@ -37,7 +38,7 @@ async function sync() {
           const ev = JSON.parse(t);
           if (ev && ev.event === 'message' && ev.message) {
             const s = JSON.parse(ev.message);
-            if (s && s.name && (s.score | 0) > 0) {
+            if (s && s.name && (s.score | 0) > 0 && s.dev !== 'seed') {
               const entry = {
                 name: String(s.name).slice(0, 12),
                 score: s.score | 0,
