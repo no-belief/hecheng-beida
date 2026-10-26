@@ -127,11 +127,12 @@ for(var i=0;i<TIERS.length;i++){
 }
 
 /* ================= 昵称 & 排行榜 ================= */
-/* 云端排行榜: restful-api.dev 匿名对象存储(CORS 全开放,浏览器可直连读写)
-   对象: {id, name, data:{scores:[{name,score,dev,ts}]}}
-   读取 GET /objects/<id>;写入 PUT /objects/<id>(读→合并→写回,带重试)
-   该服务实测: GET/PUT/OPTIONS 预检全部通过 Access-Control-Allow-Origin: * */
+/* 云端排行榜: 双路冗余
+   实时: restful-api.dev 匿名对象存储 {data:{scores:[...]}}(写入用)
+   兜底: GitHub Pages 静态 scores.json(由 Actions 定时同步,读取极稳)
+   读取: 先实时(6s超时),失败自动切兜底;任一通了都能显示 */
 var API='https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911';
+var API_FALLBACK='scores.json?t='+Date.now();
 var NICK_KEY='hcbd_nick';
 var DEV_KEY='hcbd_dev';
 var NICK_A=['快乐的','努力的','佛系的','爱睡觉的','北大路的','未名湖的','博雅塔的','图书馆的','燕园的','自习的','卷王的','摸鱼的','干饭的','冲刺的','散步的','爬山的'];
@@ -191,11 +192,12 @@ lbWrap.addEventListener('click',function(e){if(e.target===this)this.classList.ad
 function renderLB(scores){
   var list=document.getElementById('lbList');
   var hint=document.getElementById('lbHint');
-  hint.textContent='全网 '+scores.length+' 条成绩 · 每 5 秒自动刷新 · '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
-  if(!scores.length){
-    list.innerHTML='<div class="empty">还没有人上榜,快来抢占第 1 名!🏅<br>叫上朋友一起玩,得分实时比拼</div>';
+  if(!scores||!scores.length){
+    hint.textContent='加载失败,请检查网络后重试';
+    list.innerHTML='<div class="empty">暂无数据<br>游戏结束后成绩会自动上传</div>';
     return;
   }
+  hint.textContent='全网 '+scores.length+' 条成绩 · 每 5 秒自动刷新 · '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
   var medals=['🥇','🥈','🥉'];
   var html='';
   for(var i=0;i<scores.length;i++){
@@ -212,19 +214,26 @@ function renderLB(scores){
 }
 
 /* 带超时的 fetch */
-function fetchT(url,opts){
+function fetchT(url,opts,ms){
+  ms=ms||12000;
   var ctrl=typeof AbortController!=='undefined'?new AbortController():null;
   if(ctrl) opts=Object.assign({},opts,{signal:ctrl.signal});
-  var timer=ctrl?setTimeout(function(){ctrl.abort();},12000):null;
+  var timer=ctrl?setTimeout(function(){ctrl.abort();},ms):null;
   return fetch(url,opts).then(function(r){if(timer)clearTimeout(timer);return r;},
     function(e){if(timer)clearTimeout(timer);throw e;});
 }
 
-/* 读取远端对象并排序 */
+/* 从 restful-api.dev 格式解析成绩数组 */
+function parseScores(data){
+  var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
+  if(!Array.isArray(scores)) return [];
+  return scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
+}
+
+/* 读取: 实时优先,失败自动切 GitHub 兜底 */
 function loadLeaderboard(){
-  fetchT(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
-    var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
-    scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
+  fetchT(API,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
+    var scores=parseScores(data);
     scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
     scores=scores.slice(0,50);
     renderLB(scores);
@@ -235,10 +244,28 @@ function loadLeaderboard(){
     document.getElementById('lbFoot').textContent=myBest
       ?('我的最高分: '+myBest+' · 全网第 '+myRank+' 名')
       :'还没有你的成绩,上榜冲分吧!';
-  }).catch(function(){});
+  }).catch(function(){
+    /* 实时源失败 → 读 GitHub 兜底(数据最多延迟 5 分钟) */
+    fetchT(API_FALLBACK,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
+      var scores=Array.isArray(data)?data:((data&&Array.isArray(data.scores))?data.scores:[]);
+      scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
+      scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
+      scores=scores.slice(0,50);
+      renderLB(scores);
+      var myBest=0,myRank=0;
+      for(var i=0;i<scores.length;i++){
+        if(scores[i].dev===dev&&scores[i].score>myBest){myBest=scores[i].score;myRank=i+1;}
+      }
+      document.getElementById('lbFoot').textContent=myBest
+        ?('我的最高分: '+myBest+' · 全网第 '+myRank+' 名')
+        :'还没有你的成绩,上榜冲分吧!';
+    }).catch(function(){
+      renderLB(null);
+    });
+  });
 }
 
-/* 写入: 读取→合并→排序→写回,带重试;单玩家连续写有防抖 */
+/* 写入: 读→合并→写回 restful 实时仓,带重试 */
 function submitScore(){
   if(DEMO) return; /* 演示模式不污染真实排行榜 */
   if(scoreSubmitted||score<=0)return;
@@ -246,20 +273,19 @@ function submitScore(){
   var entry={name:nick,score:score,dev:dev,ts:Date.now()};
   var attempt=function(tries){
     if(tries<=0)return;
-    fetchT(API,{cache:'no-store'}).then(function(r){return r.json();}).then(function(data){
-      var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
-      scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
+    fetchT(API,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
+      var scores=parseScores(data);
       scores.push(entry);
       scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
       scores=scores.slice(0,200);
       return fetchT(API,{method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
-        body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})}).then(function(r2){
-        if(r2.ok){pendingRank=scores.indexOf(entry)+1;rankTotal=scores.length;loadLeaderboard();}
+        body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})},6000).then(function(r2){
+        if(r2.ok){pendingRank=scores.indexOf(entry)+1;rankTotal=scores.length;setTimeout(loadLeaderboard,600);}
         else return attempt(tries-1);
       });
     }).catch(function(){setTimeout(function(){attempt(tries-1);},1500);});
   };
-  attempt(5);
+  attempt(3);
 }
 setInterval(loadLeaderboard,5000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)loadLeaderboard();});
