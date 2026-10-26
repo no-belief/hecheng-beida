@@ -127,11 +127,11 @@ for(var i=0;i<TIERS.length;i++){
 }
 
 /* ================= 昵称 & 排行榜 ================= */
-/* 云端排行榜: 双路冗余
-   实时: restful-api.dev 匿名对象存储 {data:{scores:[...]}}(写入用)
-   兜底: GitHub Pages 静态 scores.json(由 Actions 定时同步,读取极稳)
-   读取: 先实时(6s超时),失败自动切兜底;任一通了都能显示 */
-var API='https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911';
+/* 云端排行榜最终架构:
+   写入: POST ntfy.sh(免费、无配额、CORS 全开放)
+   读取: GitHub Pages scores.json(极稳) + ntfy 实时流(可选,超时忽略)
+   同步: GitHub Actions 每 5 分钟把 ntfy 新成绩合并进 scores.json 永久保存 */
+var NTFY='https://ntfy.sh/hcbd-lb-r6xmd0cpmlgt';
 var API_FALLBACK='scores.json?t='+Date.now();
 var NICK_KEY='hcbd_nick';
 var DEV_KEY='hcbd_dev';
@@ -197,7 +197,7 @@ function renderLB(scores){
     list.innerHTML='<div class="empty">暂无数据<br>游戏结束后成绩会自动上传</div>';
     return;
   }
-  hint.textContent='全网 '+scores.length+' 条成绩 · 每 5 秒自动刷新 · '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  hint.textContent='全网 '+scores.length+' 条成绩 · 每 30 秒自动刷新 · '+new Date().toLocaleTimeString('zh-CN',{hour12:false});
   var medals=['🥇','🥈','🥉'];
   var html='';
   for(var i=0;i<scores.length;i++){
@@ -223,72 +223,103 @@ function fetchT(url,opts,ms){
     function(e){if(timer)clearTimeout(timer);throw e;});
 }
 
-/* 从 restful-api.dev 格式解析成绩数组 */
+/* 从对象/数组格式解析成绩数组 */
 function parseScores(data){
   var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
   if(!Array.isArray(scores)) return [];
   return scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
 }
 
-/* 读取: 实时优先,失败自动切 GitHub 兜底 */
+/* 读取: GitHub scores.json(极稳),ntfy 实时流作为补充(SSE,超时自动放弃) */
+var liveScores=[];
+function startNtfyStream(){
+  try{
+    var es=new EventSource(NTFY+'/json?since=all');
+    es.onmessage=function(ev){
+      try{
+        var m=JSON.parse(ev.data);
+        if(m&&m.event==='message'&&m.message){
+          var s=JSON.parse(m.message);
+          if(s&&s.name&&(s.score|0)>0){
+            liveScores.push({name:s.name,score:s.score,dev:s.dev,ts:s.ts||(m.time*1000)});
+          }
+        }
+      }catch(e){}
+    };
+    es.onerror=function(){try{es.close();}catch(e){}};
+  }catch(e){}
+}
+
 function loadLeaderboard(){
-  fetchT(API,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
-    var scores=parseScores(data);
-    scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
-    scores=scores.slice(0,50);
-    renderLB(scores);
+  fetchT(API_FALLBACK,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
+    var scores=Array.isArray(data)?data:((data&&Array.isArray(data.scores))?data.scores:[]);
+    /* 合并 SSE 实时流里的新成绩 */
+    var seen={};
+    var merged=[];
+    var list=scores.concat(liveScores);
+    for(var i=0;i<list.length;i++){
+      var s=list[i];
+      if(!s||!s.name||(s.score|0)<=0) continue;
+      var key=s.dev+'|'+(s.ts||0)+'|'+(s.score|0);
+      if(!seen[key]){seen[key]=1;merged.push(s);}
+    }
+    merged.sort(function(a,b){return (b.score-a.score)||((a.ts||0)-(b.ts||0));});
+    merged=merged.slice(0,50);
+    renderLB(merged);
     var myBest=0,myRank=0;
-    for(var i=0;i<scores.length;i++){
-      if(scores[i].dev===dev&&scores[i].score>myBest){myBest=scores[i].score;myRank=i+1;}
+    for(var i=0;i<merged.length;i++){
+      if(merged[i].dev===dev&&merged[i].score>myBest){myBest=merged[i].score;myRank=i+1;}
     }
     document.getElementById('lbFoot').textContent=myBest
       ?('我的最高分: '+myBest+' · 全网第 '+myRank+' 名')
       :'还没有你的成绩,上榜冲分吧!';
   }).catch(function(){
-    /* 实时源失败 → 读 GitHub 兜底(数据最多延迟 5 分钟) */
-    fetchT(API_FALLBACK,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
-      var scores=Array.isArray(data)?data:((data&&Array.isArray(data.scores))?data.scores:[]);
-      scores=scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
-      scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
-      scores=scores.slice(0,50);
-      renderLB(scores);
-      var myBest=0,myRank=0;
-      for(var i=0;i<scores.length;i++){
-        if(scores[i].dev===dev&&scores[i].score>myBest){myBest=scores[i].score;myRank=i+1;}
-      }
-      document.getElementById('lbFoot').textContent=myBest
-        ?('我的最高分: '+myBest+' · 全网第 '+myRank+' 名')
-        :'还没有你的成绩,上榜冲分吧!';
-    }).catch(function(){
-      renderLB(null);
-    });
+    renderLB(null);
   });
 }
 
-/* 写入: 读→合并→写回 restful 实时仓,带重试 */
+/* 写入: POST ntfy(主,无配额) + restful 合并写入(备),任一成功即可
+   本机 liveScores 立即生效,玩家马上看到自己的成绩 */
 function submitScore(){
   if(DEMO) return; /* 演示模式不污染真实排行榜 */
   if(scoreSubmitted||score<=0)return;
   scoreSubmitted=true;
   var entry={name:nick,score:score,dev:dev,ts:Date.now()};
-  var attempt=function(tries){
-    if(tries<=0)return;
-    fetchT(API,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
-      var scores=parseScores(data);
-      scores.push(entry);
-      scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
-      scores=scores.slice(0,200);
-      return fetchT(API,{method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
-        body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})},6000).then(function(r2){
-        if(r2.ok){pendingRank=scores.indexOf(entry)+1;rankTotal=scores.length;setTimeout(loadLeaderboard,600);}
-        else return attempt(tries-1);
-      });
-    }).catch(function(){setTimeout(function(){attempt(tries-1);},1500);});
+  var showLocal=function(){
+    liveScores.push(entry);
+    setTimeout(loadLeaderboard,500);
   };
-  attempt(3);
+  /* 通道1: ntfy POST,重试3次 */
+  var tryNtfy=function(n){
+    if(n<=0)return;
+    fetchT(NTFY,{method:'POST',headers:{'Content-Type':'application/json;charset=UTF-8'},
+      body:JSON.stringify(entry)},6000).then(function(r){
+      if(r.ok) showLocal();
+      else setTimeout(function(){tryNtfy(n-1);},1200);
+    }).catch(function(){setTimeout(function(){tryNtfy(n-1);},1200);});
+  };
+  /* 通道2: restful 读→合并→写回 */
+  var tryRest=function(n){
+    if(n<=0)return;
+    fetchT('https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911',{cache:'no-store'},6000)
+      .then(function(r){return r.json();}).then(function(data){
+        var scores=parseScores(data);
+        scores.push(entry);
+        scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
+        scores=scores.slice(0,200);
+        return fetchT('https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911',
+          {method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
+           body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})},6000).then(function(r2){
+          if(r2.ok) showLocal();
+          else setTimeout(function(){tryRest(n-1);},1200);
+        });
+      }).catch(function(){setTimeout(function(){tryRest(n-1);},1200);});
+  };
+  tryNtfy(3); tryRest(2);
 }
-setInterval(loadLeaderboard,5000);
+setInterval(loadLeaderboard,30000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)loadLeaderboard();});
+startNtfyStream();
 
 /* ================= 游戏本体 ================= */
 
