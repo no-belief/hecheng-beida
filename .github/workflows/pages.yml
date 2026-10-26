@@ -1,10 +1,12 @@
-﻿name: Deploy static content to Pages
+name: Deploy + Sync Scores
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 concurrency:
@@ -19,6 +21,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Sync scores
+        run: node sync-scores.cjs
+      - name: Commit synced scores
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          if ! git diff --quiet scores.json; then
+            git add scores.json
+            git commit -m "sync scores [skip ci]"
+            git push
+          fi
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
