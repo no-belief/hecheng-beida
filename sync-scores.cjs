@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const NTFY = 'https://ntfy.sh/hcbd-lb-r6xmd0cpmlgt/json?poll=0&since=all';
+const NTFY = 'https://ntfy.sh/hcbd-lb-mmadi0abu2nm/json?poll=0&since=all';
 
 async function sync() {
   const file = path.join(__dirname, 'scores.json');
