@@ -17,12 +17,12 @@ async function sync() {
   } catch (e) { /* 首次运行 */ }
 
   const seen = {};
-  const merged = [];
+  const bestByDev = {};  /* 每设备只保留最高分 */
   for (const s of existing.scores) {
     if (!s || !s.name || (s.score | 0) <= 0) continue;
     if (s.dev === 'seed' || s.dev === 'unknown') continue; /* 过滤测试/无效数据 */
-    const key = s.dev + '|' + s.ts + '|' + s.score;
-    if (!seen[key]) { seen[key] = 1; merged.push(s); }
+    const d = String(s.dev || 'anon').slice(0, 40);
+    if (!bestByDev[d] || bestByDev[d].score < (s.score | 0)) bestByDev[d] = s;
   }
 
   let ntfyCount = 0;
@@ -45,8 +45,9 @@ async function sync() {
                 dev: String(s.dev || 'unknown').slice(0, 40),
                 ts: s.ts || (ev.time ? ev.time * 1000 : Date.now())
               };
-              const key = entry.dev + '|' + entry.ts + '|' + entry.score;
-              if (!seen[key]) { seen[key] = 1; merged.push(entry); ntfyCount++; }
+              if (!bestByDev[entry.dev] || bestByDev[entry.dev].score < entry.score) {
+                bestByDev[entry.dev] = entry; ntfyCount++;
+              }
             }
           }
         } catch (e) { /* 跳过非消息行 */ }
@@ -58,6 +59,8 @@ async function sync() {
     ntfyFailed = true;
     console.log('[sync] ntfy 读取失败(保留现有数据):', e.message);
   }
+
+  const merged = Object.values(bestByDev);
   if (ntfyFailed && merged.length === 0) {
     /* 读不到 ntfy 且本地无数据:保留原文件不动 */
     console.log('[sync] 无数据可写,跳过');
