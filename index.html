@@ -61,8 +61,8 @@ canvas{display:block;max-width:100vw;max-height:100vh;cursor:pointer;touch-actio
 
 <div id="nickWrap" class="overlay hidden">
   <div class="card">
-    <h2>🏆 起个昵称,上榜冲分!</h2>
-    <div class="sub">游戏结束后,你的得分会自动上传到实时排行榜,和其他玩家一起 PK 排名。</div>
+    <h2 id="nickTitle">🏆 起个昵称,上榜冲分!</h2>
+    <div class="sub" id="nickSub">游戏结束后,你的得分会自动上传到实时排行榜,和其他玩家一起 PK 排名。</div>
     <input id="nickInput" maxlength="12" placeholder="输入昵称(最多12字)" autocomplete="off" enterkeyhint="done">
     <div class="btnrow">
       <button id="nickRandom">🎲 随机</button>
@@ -131,12 +131,12 @@ for(var i=0;i<TIERS.length;i++){
    写入: POST ntfy.sh(免费、无配额、CORS 全开放)
    读取: GitHub Pages scores.json(极稳) + ntfy 实时流(可选,超时忽略)
    同步: GitHub Actions 每 5 分钟把 ntfy 新成绩合并进 scores.json 永久保存 */
-var NTFY='https://ntfy.sh/hcbd-lb-r6xmd0cpmlgt';
+var NTFY='https://ntfy.sh/hcbd-lb-mmadi0abu2nm';
 var API_FALLBACK='scores.json?t='+Date.now();
 var NICK_KEY='hcbd_nick';
 var DEV_KEY='hcbd_dev';
-var NICK_A=['快乐的','努力的','佛系的','爱睡觉的','北大路的','未名湖的','博雅塔的','图书馆的','燕园的','自习的','卷王的','摸鱼的','干饭的','冲刺的','散步的','爬山的'];
-var NICK_B=['猫','鱼','鸭','熊','兔','鹿','狐','鲸','雁','鹰','松鼠','企鹅','熊猫','海豚','考拉','河马'];
+var NICK_A=['快乐的','努力的','佛系的','爱睡觉的','北大路的','未名湖的','博雅塔的','图书馆的','燕园的','自习的','卷王的','摸鱼的','干饭的','冲刺的','散步的','爬山的','熬夜的','早八的','刷题的','抢座的','图书馆占座的','未名湖畔的','博雅塔下的','食堂排队的','静园草坪的','三角地的','跑校园的','刷夜的','追剧的','听讲座的','做实验的','写论文的','答辩的','保研的','考研的','出国的','社团的','合唱的','辩论的','羽毛球的','夜跑的','晨读的','干饭第一名的','摸鱼冠军的','做梦的','发呆的','喝茶的','咖啡续命的','奶茶续命的','自习室常驻的','凌晨的','期末周的','开学季的','毕业季的','军训的','体测的','刷绩点的','转专业的','辅修的'];
+var NICK_B=['猫','鱼','鸭','熊','兔','鹿','狐','鲸','雁','鹰','松鼠','企鹅','熊猫','海豚','考拉','河马','猫头鹰','柴犬','柯基','布偶猫','橘猫','狸花猫','边牧','哈士奇','金毛','萨摩耶','比熊','仓鼠','刺猬','水獭','鸽子','麻雀','喜鹊','锦鲤','小龙虾','章鱼','海星','北极熊','大熊猫','树懒','袋鼠','考拉熊','羊驼','小鹿','白鲸','海豚','乌龟','青蛙','蝴蝶','蜻蜓','萤火虫','小燕子','大雁','孔雀','丹顶鹤','火烈鸟','天鹅','企鹅宝宝','海豹','海狮','水母','贝壳','河豚','鲨鱼','鲸鱼','狮子','老虎','猎豹','雪豹','狐狸','浣熊','刺豚','寄居蟹','小螃蟹'];
 
 function getNick(){return localStorage.getItem(NICK_KEY)||'';}
 function setNick(n){n=String(n||'').replace(/\s+/g,' ').trim().slice(0,12);if(n)localStorage.setItem(NICK_KEY,n);return n;}
@@ -164,8 +164,22 @@ var nickWrap=document.getElementById('nickWrap');
 var nickInput=document.getElementById('nickInput');
 var lbWrap=document.getElementById('lbWrap');
 
-function openNickModal(){
+var nickModalMode='start'; /* 'start'=首次起名, 'edit'=修改昵称 */
+function openNickModal(mode){
+  nickModalMode=mode||(started?'edit':'start');
   nickInput.value=nick;
+  var title=document.getElementById('nickTitle');
+  var sub=document.getElementById('nickSub');
+  var ok=document.getElementById('nickOk');
+  if(nickModalMode==='edit'){
+    if(title) title.textContent='✏️ 修改昵称';
+    if(sub) sub.textContent='新昵称会在你下一次上传成绩时生效,历史成绩保持不变。';
+    if(ok) ok.textContent='保存昵称';
+  }else{
+    if(title) title.textContent='🏆 起个昵称,上榜冲分!';
+    if(sub) sub.textContent='游戏结束后,你的得分会自动上传到实时排行榜,和其他玩家一起 PK 排名。';
+    if(ok) ok.textContent='开始游戏';
+  }
   nickWrap.classList.remove('hidden');
   setTimeout(function(){try{nickInput.focus();}catch(e){}},60);
 }
@@ -174,7 +188,7 @@ function saveNickAndStart(){
   if(!v)v=randNick();
   setNick(v); nick=v;
   nickWrap.classList.add('hidden');
-  if(!started&&!over){started=true;lastDrop=Date.now()-DROP_CD+100;}
+  if(nickModalMode!=='edit'&&!started&&!over){started=true;lastDrop=Date.now()-DROP_CD+100;}
 }
 document.getElementById('nickOk').addEventListener('click',saveNickAndStart);
 document.getElementById('nickRandom').addEventListener('click',function(){
@@ -472,14 +486,16 @@ function toCanvasX(cx){var rc=cv.getBoundingClientRect();return(cx-rc.left)/rc.w
 function toCanvasY(cy){var rc=cv.getBoundingClientRect();return(cy-rc.top)/rc.height*H;}
 
 function inLbBtn(cx,cy){return cx>=W-48&&cx<=W-4&&cy>=6&&cy<=34;}
+function inNickBtn(cx,cy){return cx>=W-48&&cx<=W-4&&cy>=40&&cy<=68;}
 function inNickEdit(cx,cy){return cx>W/2-110&&cx<W/2+110&&cy>H/2+50&&cy<H/2+80;}
 
 cv.addEventListener('mousemove',function(e){aimX=toCanvasX(e.clientX);});
 cv.addEventListener('click',function(e){
   var cx=toCanvasX(e.clientX), cy=toCanvasY(e.clientY);
   if(inLbBtn(cx,cy)){toggleLB();return;}
+  if(inNickBtn(cx,cy)){openNickModal('edit');return;}
   if(!started){
-    if(inNickEdit(cx,cy)){openNickModal();return;}
+    if(inNickEdit(cx,cy)){openNickModal('start');return;}
     started=true;lastDrop=Date.now()-DROP_CD+100;return;
   }
   if(over){checkRestart(e.clientX,e.clientY);return;}
@@ -496,8 +512,9 @@ cv.addEventListener('touchend',function(e){
   var t=e.changedTouches[0];
   var cx=toCanvasX(t.clientX), cy=toCanvasY(t.clientY);
   if(inLbBtn(cx,cy)){toggleLB();return;}
+  if(inNickBtn(cx,cy)){openNickModal('edit');return;}
   if(!started){
-    if(inNickEdit(cx,cy)){openNickModal();return;}
+    if(inNickEdit(cx,cy)){openNickModal('start');return;}
     started=true;lastDrop=Date.now()-DROP_CD+100;return;
   }
   if(over){checkRestart(t.clientX,t.clientY);return;}
@@ -683,6 +700,12 @@ function render(c){
   c.fillStyle='#1e293b';c.font='12px sans-serif';c.textAlign='center';c.textBaseline='middle';
   c.fillText('\uD83C\uDFC6 \u699C',W-26,21);
 
+  /* 改昵称按钮(游戏过程中常驻) */
+  c.fillStyle='rgba(255,255,255,.88)';rr(c,W-48,40,44,28,14);c.fill();
+  c.strokeStyle='rgba(100,116,139,.3)';c.lineWidth=1;rr(c,W-48,40,44,28,14);c.stroke();
+  c.fillStyle='#1e293b';c.font='12px sans-serif';c.textAlign='center';c.textBaseline='middle';
+  c.fillText('\u270F\uFE0F \u540D',W-26,55);
+
   c.fillStyle='#475569';c.font='12px sans-serif';c.textAlign='left';c.textBaseline='middle';
   c.fillText('\u4E0B\u4E00\u4E2A:',12,54);
   drawBall(c,72,54,nxt,.45,1);
@@ -771,7 +794,7 @@ if(document.hidden) {
 }
 
 loadLeaderboard();
-if(!getNick()) setTimeout(openNickModal,400);
+if(!getNick()) setTimeout(function(){openNickModal('start');},400);
 
 })();
 </script>
