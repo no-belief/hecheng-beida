@@ -136,18 +136,18 @@ var DROP_CD=400;
 var SPAWN_COUNT=5;
 
 var TIERS=[
-  {name:'人大',full:'中国人民大学',  r:13, svg:'ruc.svg',    color:'#c0392b', dim:0.00},
-  {name:'同济',full:'同济大学',      r:16, svg:'tongji.svg', color:'#2980b9', dim:0.04},
-  {name:'西交',full:'西安交通大学',  r:20, svg:'xjtu.svg',   color:'#d35400', dim:0.23},
-  {name:'哈工',full:'哈尔滨工业大学',r:25, svg:'hit.svg',    color:'#2c3e50', dim:0.00},
-  {name:'武大',full:'武汉大学',      r:31, svg:'whu.svg',    color:'#8e44ad', dim:0.59},
-  {name:'南大',full:'南京大学',      r:39, svg:'nju.svg',    color:'#16a085', dim:0.00},
-  {name:'复旦',full:'复旦大学',      r:49, svg:'fdu.svg',    color:'#c0392b', dim:0.00},
-  {name:'上交',full:'上海交通大学',  r:61, svg:'sjtu.svg',   color:'#2980b9', dim:0.15},
-  {name:'浙大',full:'浙江大学',      r:75, svg:'zju.svg',    color:'#1abc9c', dim:0.00},
-  {name:'中科',full:'中国科学技术大学',r:91, svg:'ustc.svg', color:'#2c3e50', dim:0.05},
-  {name:'清华',full:'清华大学',      r:109,svg:'thu.svg',    color:'#8e44ad', dim:0.00},
-  {name:'北大',full:'北京大学',      r:129,svg:'pku.svg',    color:'#c0392b', dim:0.00}
+  {name:'人大',full:'中国人民大学',  r:13, svg:'ruc.svg',    color:'#c0392b', bright:1.25},
+  {name:'同济',full:'同济大学',      r:16, svg:'tongji.svg', color:'#2980b9', bright:1.12},
+  {name:'西交',full:'西安交通大学',  r:20, svg:'xjtu.svg',   color:'#d35400', bright:0.95},
+  {name:'哈工',full:'哈尔滨工业大学',r:25, svg:'hit.svg',    color:'#2c3e50', bright:1.25},
+  {name:'武大',full:'武汉大学',      r:31, svg:'whu.svg',    color:'#8e44ad', bright:0.50},
+  {name:'南大',full:'南京大学',      r:39, svg:'nju.svg',    color:'#16a085', bright:1.35},
+  {name:'复旦',full:'复旦大学',      r:49, svg:'fdu.svg',    color:'#c0392b', bright:1.30},
+  {name:'上交',full:'上海交通大学',  r:61, svg:'sjtu.svg',   color:'#2980b9', bright:1.00},
+  {name:'浙大',full:'浙江大学',      r:75, svg:'zju.svg',    color:'#1abc9c', bright:1.25},
+  {name:'中科',full:'中国科学技术大学',r:91, svg:'ustc.svg', color:'#2c3e50', bright:1.12},
+  {name:'清华',full:'清华大学',      r:109,svg:'thu.svg',    color:'#8e44ad', bright:1.30},
+  {name:'北大',full:'北京大学',      r:129,svg:'pku.svg',    color:'#c0392b', bright:1.30}
 ];
 var MT=TIERS.length-1;
 
@@ -710,12 +710,11 @@ function drawBall(c,x,y,ti,sc,al){
   if(img && img.complete && img.naturalWidth>0){
     c.save();
     c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.clip();
-    c.drawImage(img,x-r,y-r,r*2,r*2);
-    /* 亮度校正: 叠加半透明暗色,统一各校徽视觉亮度 */
-    if(d.dim>0){
-      c.fillStyle='rgba(0,0,0,'+d.dim+')';
-      c.fillRect(x-r,y-r,r*2,r*2);
+    /* 亮度校正: canvas filter brightness() 统一各校徽视觉亮度 */
+    if(d.bright!==1 && 'filter' in c){
+      c.filter='brightness('+d.bright+')';
     }
+    c.drawImage(img,x-r,y-r,r*2,r*2);
     c.restore();
     c.beginPath();c.arc(x,y,r,0,Math.PI*2);
     c.strokeStyle=d.color;c.lineWidth=2.5;c.stroke();
@@ -963,11 +962,10 @@ function render(c){
     if(iconImg && iconImg.complete && iconImg.naturalWidth>0){
       c.save();
       c.beginPath();c.arc(W/2-52,H/2+30,iconR,0,Math.PI*2);c.clip();
-      c.drawImage(iconImg,W/2-52-iconR,H/2+30-iconR,iconR*2,iconR*2);
-      if(md.dim>0){
-        c.fillStyle='rgba(0,0,0,'+md.dim+')';
-        c.fillRect(W/2-52-iconR,H/2+30-iconR,iconR*2,iconR*2);
+      if(md.bright!==1 && 'filter' in c){
+        c.filter='brightness('+md.bright+')';
       }
+      c.drawImage(iconImg,W/2-52-iconR,H/2+30-iconR,iconR*2,iconR*2);
       c.restore();
       c.beginPath();c.arc(W/2-52,H/2+30,iconR,0,Math.PI*2);
       c.strokeStyle=md.color;c.lineWidth=2;c.stroke();
