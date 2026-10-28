@@ -301,13 +301,6 @@ function fetchT(url,opts,ms){
     function(e){if(timer)clearTimeout(timer);throw e;});
 }
 
-/* 从对象/数组格式解析成绩数组 */
-function parseScores(data){
-  var scores=Array.isArray(data)?data:(data&&Array.isArray(data.data)&&Array.isArray(data.data.scores)?data.data.scores:[]);
-  if(!Array.isArray(scores)) return [];
-  return scores.filter(function(s){return s&&s.name&&(s.score|0)>0;});
-}
-
 /* 读取: GitHub scores.json(极稳);SSE 实时流按需启用(网络差时自动失效) */
 var liveScores=[];
 function startNtfyStream(){
@@ -331,16 +324,17 @@ function startNtfyStream(){
 function loadLeaderboard(){
   fetchT(API_FALLBACK,{cache:'no-store'},6000).then(function(r){return r.json();}).then(function(data){
     var scores=Array.isArray(data)?data:((data&&Array.isArray(data.scores))?data.scores:[]);
-    /* 合并 SSE 实时流里的新成绩 */
-    var seen={};
-    var merged=[];
+    /* 合并 SSE 实时流里的新成绩,按设备去重(每设备保留最高分) */
+    var bestByDev={};
     var list=scores.concat(liveScores);
     for(var i=0;i<list.length;i++){
       var s=list[i];
       if(!s||!s.name||(s.score|0)<=0) continue;
-      var key=s.dev+'|'+(s.ts||0)+'|'+(s.score|0);
-      if(!seen[key]){seen[key]=1;merged.push(s);}
+      var d=s.dev||'anon';
+      if(!bestByDev[d]||bestByDev[d].score<(s.score|0)) bestByDev[d]=s;
     }
+    var merged=[];
+    for(var k in bestByDev) merged.push(bestByDev[k]);
     merged.sort(function(a,b){return (b.score-a.score)||((a.ts||0)-(b.ts||0));});
     merged=merged.slice(0,50);
     renderLB(merged);
@@ -356,18 +350,26 @@ function loadLeaderboard(){
   });
 }
 
-/* 写入: POST ntfy(主,无配额) + restful 合并写入(备),任一成功即可
-   本机 liveScores 立即生效,玩家马上看到自己的成绩 */
+/* 写入: POST ntfy(无配额、无认证、CORS 全开放),同步 GitHub 由 Actions 兜底。
+   写入成功后立即加入本机 liveScores,玩家马上看到自己的成绩。 */
 function submitScore(){
   if(DEMO) return; /* 演示模式不污染真实排行榜 */
   if(scoreSubmitted||score<=0)return;
   scoreSubmitted=true;
   var entry={name:nick,score:score,dev:dev,ts:Date.now()};
   var showLocal=function(){
+    /* 去重: 同一设备只保留最高分的一条实时记录 */
+    for(var i=0;i<liveScores.length;i++){
+      if(liveScores[i].dev===dev){
+        if(liveScores[i].score<entry.score) liveScores[i]=entry;
+        setTimeout(loadLeaderboard,500);
+        return;
+      }
+    }
     liveScores.push(entry);
     setTimeout(loadLeaderboard,500);
   };
-  /* 通道1: ntfy POST,重试3次 */
+  /* ntfy POST,重试3次 */
   var tryNtfy=function(n){
     if(n<=0)return;
     fetchT(NTFY,{method:'POST',headers:{'Content-Type':'application/json;charset=UTF-8'},
@@ -376,24 +378,7 @@ function submitScore(){
       else setTimeout(function(){tryNtfy(n-1);},1200);
     }).catch(function(){setTimeout(function(){tryNtfy(n-1);},1200);});
   };
-  /* 通道2: restful 读→合并→写回 */
-  var tryRest=function(n){
-    if(n<=0)return;
-    fetchT('https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911',{cache:'no-store'},6000)
-      .then(function(r){return r.json();}).then(function(data){
-        var scores=parseScores(data);
-        scores.push(entry);
-        scores.sort(function(a,b){return (b.score-a.score)||(a.ts-b.ts);});
-        scores=scores.slice(0,200);
-        return fetchT('https://api.restful-api.dev/objects/ff808181a09d98f701a173c1fdc90911',
-          {method:'PUT',headers:{'Content-Type':'application/json;charset=UTF-8'},
-           body:JSON.stringify({name:'合成北大排行榜',data:{scores:scores}})},6000).then(function(r2){
-          if(r2.ok) showLocal();
-          else setTimeout(function(){tryRest(n-1);},1200);
-        });
-      }).catch(function(){setTimeout(function(){tryRest(n-1);},1200);});
-  };
-  tryNtfy(3); tryRest(2);
+  tryNtfy(3);
 }
 setInterval(loadLeaderboard,30000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)loadLeaderboard();});
