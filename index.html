@@ -371,6 +371,11 @@ var shkT=0, shkI=0;
 var maxReached=0;
 var dangerTimer=0, dangerNear=false;
 var mergeQueue=[];
+/* 合成北大庆祝效果 */
+var celebrateT=0;      /* >0 表示庆祝中,倒计时 ms */
+var celebrateAt=null;  /* 合成位置 {x,y} */
+var confetti=[];       /* 彩带粒子 */
+var wonCount=0;        /* 本局合成北大次数 */
 
 function rndT(){
   if(DEMO){
@@ -413,7 +418,14 @@ function processQueue(){
     score+=(nt+1)*10;
     if(nt>maxReached) maxReached=nt;
     boom(mx,my,TIERS[nt].color,14);
-    if(nt===MT){boom(mx,my,'#fbbf24',50);boom(mx,my,'#ef4444',35);}
+    if(nt===MT){
+      boom(mx,my,'#fbbf24',50);boom(mx,my,'#ef4444',35);
+      /* 🎉 合成北大: 触发隆重庆祝效果 */
+      celebrateT=4000;
+      celebrateAt={x:mx,y:my};
+      wonCount++;
+      spawnConfetti(mx,my);
+    }
     else{shkT=100;shkI=Math.min((nt+1)*1.2,6);}
   }
   mergeQueue=[];
@@ -438,6 +450,39 @@ function boom(x,y,c,n){
     var a=Math.PI*2*i/n+Math.random()*.4, s=2+Math.random()*4;
     parts.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,
       life:1,dc:.018+Math.random()*.02,c:c,sz:2+Math.random()*4});
+  }
+}
+/* 彩带/焰火粒子: 从合成点向外喷发,带重力与旋转 */
+function spawnConfetti(x,y){
+  var colors=['#fbbf24','#f59e0b','#ef4444','#dc2626','#f97316','#fde047','#facc15','#fb923c','#fca5a5','#fcd34d','#fff7ed'];
+  for(var i=0;i<160;i++){
+    var a=Math.random()*Math.PI*2;
+    var sp=3+Math.random()*9;
+    var c=colors[(Math.random()*colors.length)|0];
+    var life=1+Math.random()*1.2;
+    confetti.push({
+      x:x, y:y,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-4-Math.random()*3,
+      g:0.16+Math.random()*0.08,
+      life:life, maxLife:life,
+      c:c,
+      w:4+Math.random()*5, h:7+Math.random()*6,
+      rot:Math.random()*Math.PI*2, vr:(Math.random()-0.5)*0.35,
+      shape:Math.random()<0.5?'rect':'circle',
+      r:2+Math.random()*3
+    });
+  }
+}
+function tickConfetti(dt){
+  var step=dt/16.7;
+  for(var i=confetti.length-1;i>=0;i--){
+    var p=confetti[i];
+    p.x+=p.vx*step; p.y+=p.vy*step;
+    p.vy+=p.g*step;
+    p.vx*=0.985;
+    p.life-=0.006*step;
+    p.rot+=p.vr*step;
+    if(p.life<=0) confetti.splice(i,1);
   }
 }
 function tickParts(){
@@ -533,6 +578,7 @@ function doRestart(){
   cur=rndT(); nxt=rndT(); maxReached=0;
   started=true; dangerTimer=0; dangerNear=false;
   scoreSubmitted=false; pendingRank=0;
+  celebrateT=0; celebrateAt=null; confetti=[]; wonCount=0;
 }
 
 function update(dt){
@@ -570,6 +616,11 @@ function update(dt){
     dangerTimer=Math.max(0,dangerTimer-dt*2);
   }
   tickParts();
+  tickConfetti(dt);
+  if(celebrateT>0){
+    celebrateT-=dt;
+    if(celebrateT<=0){celebrateT=0;celebrateAt=null;confetti=[];}
+  }
   if(shkT>0) shkT-=dt;
 }
 
@@ -675,6 +726,67 @@ function render(c){
     c.beginPath();c.arc(p.x,p.y,p.sz*p.life,0,Math.PI*2);c.fill();
   }
   c.globalAlpha=1;
+
+  /* 彩带绘制 */
+  for(var j=0;j<confetti.length;j++){
+    var cf=confetti[j];
+    c.save();
+    c.globalAlpha=Math.min(1,cf.life);
+    c.translate(cf.x,cf.y);
+    c.rotate(cf.rot);
+    c.fillStyle=cf.c;
+    if(cf.shape==='rect'){
+      c.fillRect(-cf.w/2,-cf.h/2,cf.w,cf.h);
+    }else{
+      c.beginPath();c.arc(0,0,cf.r,0,Math.PI*2);c.fill();
+    }
+    c.restore();
+  }
+  c.globalAlpha=1;
+
+  /* 合成北大的庆祝效果 */
+  if(celebrateT>0 && celebrateAt){
+    var t=celebrateT/4000;               /* 1 → 0 */
+    var prog=1-t;                        /* 0 → 1 已播放进度 */
+    var cx=celebrateAt.x, cy=celebrateAt.y;
+    /* 全屏金色光芒(淡入淡出) */
+    var glowAlpha=Math.min(1,t*2)*0.35*(1-prog*0.6);
+    var rg=c.createRadialGradient(cx,cy,0,cx,cy,Math.max(W,H));
+    rg.addColorStop(0,'rgba(251,191,36,'+glowAlpha+')');
+    rg.addColorStop(0.5,'rgba(251,191,36,'+(glowAlpha*0.5)+')');
+    rg.addColorStop(1,'rgba(251,191,36,0)');
+    c.fillStyle=rg;
+    c.fillRect(0,0,W,H);
+    /* 中心光晕脉冲 */
+    var haloR=60+Math.sin(prog*Math.PI*4)*12;
+    var hg=c.createRadialGradient(cx,cy,0,cx,cy,haloR);
+    hg.addColorStop(0,'rgba(255,255,255,'+(0.7*t)+')');
+    hg.addColorStop(1,'rgba(251,191,36,0)');
+    c.fillStyle=hg;
+    c.beginPath();c.arc(cx,cy,haloR,0,Math.PI*2);c.fill();
+    /* 🏆 北大! 大字(缩放弹出) */
+    var scale=prog<0.2 ? 0.5+prog/0.2*0.7 : 1.2-((prog-0.2)/0.8)*0.2;
+    var txtAlpha=Math.min(1,t*1.5);
+    c.save();
+    c.translate(cx,Math.max(cy-90,GT+60));
+    c.scale(scale,scale);
+    c.globalAlpha=txtAlpha;
+    c.textAlign='center';c.textBaseline='middle';
+    c.font='bold 64px "PingFang SC","Microsoft YaHei",sans-serif';
+    c.lineWidth=8;c.strokeStyle='#b45309';
+    c.strokeText('\uD83C\uDFC6',0,-40);
+    c.fillStyle='#f59e0b';
+    c.fillText('\uD83C\uDFC6',0,-40);
+    c.font='bold 40px "PingFang SC","Microsoft YaHei",sans-serif';
+    c.lineWidth=6;c.strokeStyle='#b45309';
+    c.strokeText('\u5317\u5927\uFF01',0,10);
+    c.fillStyle='#fff';
+    c.fillText('\u5317\u5927\uFF01',0,10);
+    c.font='bold 15px "PingFang SC","Microsoft YaHei",sans-serif';
+    c.fillStyle='#7c2d12';
+    c.fillText('\u606D\u559C\u5408\u6210\u5317\u4EAC\u5927\u5B66\uFF01',0,38);
+    c.restore();
+  }
 
   if(canDrop&&!over&&started){
     var d=TIERS[cur], px=Math.max(GL+d.r+4,Math.min(GR-d.r-4,aimX));
