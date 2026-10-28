@@ -54,6 +54,10 @@ canvas{display:block;max-width:100vw;max-height:100vh;cursor:pointer;touch-actio
 .empty{padding:26px 10px;text-align:center;color:#94a3b8;font-size:13px;line-height:1.8}
 .lbFoot{padding:10px 16px;border-top:1px solid #f1f5f9;font-size:12px;color:#64748b;
   background:#f8fafc;border-radius:0 0 18px 18px;text-align:center;flex:none}
+.themeOpt{flex:1 1 40%;padding:14px 8px;text-align:center;border:2px solid #e2e8f0;border-radius:12px;
+  cursor:pointer;font-size:14px;color:#334155;font-weight:600;user-select:none;-webkit-user-select:none}
+.themeOpt.active{border-color:#3b82f6;background:#eff6ff;color:#1e40af}
+.themeOpt .sw{display:block;height:26px;border-radius:8px;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -80,6 +84,17 @@ canvas{display:block;max-width:100vw;max-height:100vh;cursor:pointer;touch-actio
   </div>
 </div>
 
+<div id="themeWrap" class="overlay hidden">
+  <div class="card">
+    <h2>🎨 选择背景主题</h2>
+    <div class="sub">点击选择喜欢的游戏背景,选择后立即生效。</div>
+    <div id="themeList" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    <div class="btnrow">
+      <button id="themeClose">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
 'use strict';
@@ -95,6 +110,23 @@ var DANGER_DELAY=1350;
 
 /* 演示模式: ?demo=1 时从 9/10 级球开始,几次合成即可合成北大 */
 var DEMO=/[?&]demo=1/.test(location.search);
+
+/* 背景主题 */
+var THEMES=[
+  {id:'day',  name:'白天', bg:'#e0f2fe', top:'#e0f2fe', mid:'#bae6fd', bot:'#7dd3fc', board:'rgba(224,242,254,.45)', line:'rgba(147,197,253,.12)', css:'linear-gradient(180deg,#e0f2fe 0%,#bae6fd 50%,#7dd3fc 100%)'},
+  {id:'dusk', name:'黄昏', bg:'#ffedd5', top:'#fde68a', mid:'#fdba74', bot:'#fb923c', board:'rgba(255,237,213,.45)', line:'rgba(251,146,60,.15)', css:'linear-gradient(180deg,#fde68a 0%,#fdba74 50%,#fb923c 100%)'},
+  {id:'night',name:'夜空', bg:'#1e293b', top:'#0f172a', mid:'#1e293b', bot:'#334155', board:'rgba(30,41,59,.5)', line:'rgba(148,163,184,.12)', css:'linear-gradient(180deg,#0f172a 0%,#1e293b 50%,#334155 100%)'},
+  {id:'forest',name:'森林', bg:'#dcfce7', top:'#dcfce7', mid:'#86efac', bot:'#22c55e', board:'rgba(220,252,231,.45)', line:'rgba(34,197,94,.15)', css:'linear-gradient(180deg,#dcfce7 0%,#86efac 50%,#22c55e 100%)'},
+  {id:'pink', name:'樱花', bg:'#fce7f3', top:'#fce7f3', mid:'#f9a8d4', bot:'#ec4899', board:'rgba(252,231,243,.45)', line:'rgba(236,72,153,.15)', css:'linear-gradient(180deg,#fce7f3 0%,#f9a8d4 50%,#ec4899 100%)'}
+];
+var THEME_KEY='hcbd_theme';
+function getTheme(){return localStorage.getItem(THEME_KEY)||'day';}
+function setTheme(id){localStorage.setItem(THEME_KEY,id);}
+function currentTheme(){
+  var id=getTheme();
+  for(var i=0;i<THEMES.length;i++) if(THEMES[i].id===id) return THEMES[i];
+  return THEMES[0];
+}
 
 var GRAVITY=2.0;
 var RESTITUTION=0.1;
@@ -163,6 +195,8 @@ var lbBusy=false, lbTimer=null;
 var nickWrap=document.getElementById('nickWrap');
 var nickInput=document.getElementById('nickInput');
 var lbWrap=document.getElementById('lbWrap');
+var themeWrap=document.getElementById('themeWrap');
+var themeList=document.getElementById('themeList');
 
 var nickModalMode='start'; /* 'start'=首次起名, 'edit'=修改昵称 */
 function openNickModal(mode){
@@ -202,6 +236,36 @@ function toggleLB(){
 }
 document.getElementById('lbClose').addEventListener('click',function(){lbWrap.classList.add('hidden');});
 lbWrap.addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
+
+/* 背景主题切换 */
+function buildThemeList(){
+  var cur=getTheme();
+  var html='';
+  for(var i=0;i<THEMES.length;i++){
+    var th=THEMES[i];
+    html+='<div class="themeOpt'+(th.id===cur?' active':'')+'" data-id="'+th.id+'">'
+      +'<span class="sw" style="background:'+th.css+'"></span>'
+      +th.name+'</div>';
+  }
+  themeList.innerHTML=html;
+}
+function openThemeModal(){
+  buildThemeList();
+  themeWrap.classList.remove('hidden');
+}
+function applyTheme(id){
+  setTheme(id);
+  buildThemeList();
+  /* 更新页面外层 CSS 渐变 */
+  var th=currentTheme();
+  document.body.style.background=th.css;
+}
+document.getElementById('themeClose').addEventListener('click',function(){themeWrap.classList.add('hidden');});
+themeWrap.addEventListener('click',function(e){if(e.target===this)this.classList.add('hidden');});
+themeList.addEventListener('click',function(e){
+  var el=e.target.closest('.themeOpt');
+  if(el){applyTheme(el.getAttribute('data-id'));}
+});
 
 function renderLB(scores){
   var list=document.getElementById('lbList');
@@ -532,6 +596,7 @@ function toCanvasY(cy){var rc=cv.getBoundingClientRect();return(cy-rc.top)/rc.he
 
 function inLbBtn(cx,cy){return cx>=W-48&&cx<=W-4&&cy>=6&&cy<=34;}
 function inNickBtn(cx,cy){return cx>=W-48&&cx<=W-4&&cy>=40&&cy<=68;}
+function inThemeBtn(cx,cy){return cx>=W-48&&cx<=W-4&&cy>=74&&cy<=102;}
 function inNickEdit(cx,cy){return cx>W/2-110&&cx<W/2+110&&cy>H/2+50&&cy<H/2+80;}
 
 cv.addEventListener('mousemove',function(e){aimX=toCanvasX(e.clientX);});
@@ -539,6 +604,7 @@ cv.addEventListener('click',function(e){
   var cx=toCanvasX(e.clientX), cy=toCanvasY(e.clientY);
   if(inLbBtn(cx,cy)){toggleLB();return;}
   if(inNickBtn(cx,cy)){openNickModal('edit');return;}
+  if(inThemeBtn(cx,cy)){openThemeModal();return;}
   if(!started){
     if(inNickEdit(cx,cy)){openNickModal('start');return;}
     started=true;lastDrop=Date.now()-DROP_CD+100;return;
@@ -558,6 +624,7 @@ cv.addEventListener('touchend',function(e){
   var cx=toCanvasX(t.clientX), cy=toCanvasY(t.clientY);
   if(inLbBtn(cx,cy)){toggleLB();return;}
   if(inNickBtn(cx,cy)){openNickModal('edit');return;}
+  if(inThemeBtn(cx,cy)){openThemeModal();return;}
   if(!started){
     if(inNickEdit(cx,cy)){openNickModal('start');return;}
     started=true;lastDrop=Date.now()-DROP_CD+100;return;
@@ -568,7 +635,7 @@ cv.addEventListener('touchend',function(e){
 
 function checkRestart(cx,cy){
   var mx=toCanvasX(cx), my=toCanvasY(cy);
-  if(mx>W/2-55&&mx<W/2+55&&my>H/2+60&&my<H/2+98) doRestart();
+  if(mx>W/2-55&&mx<W/2+55&&my>H/2+74&&my<H/2+112) doRestart();
 }
 
 function doRestart(){
@@ -681,11 +748,34 @@ function render(c){
   c.save();
   if(shkT>0) c.translate((Math.random()-.5)*shkI*2,(Math.random()-.5)*shkI*2);
 
-  c.fillStyle='#f0f9ff'; c.fillRect(0,0,W,H);
+  var th=currentTheme();
+  /* 背景渐变 */
+  var bg=c.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,th.top);bg.addColorStop(0.5,th.mid);bg.addColorStop(1,th.bot);
+  c.fillStyle=bg; c.fillRect(0,0,W,H);
+  /* 夜空主题: 星星 */
+  if(th.id==='night'){
+    c.fillStyle='rgba(255,255,255,.7)';
+    for(var si=0;si<40;si++){
+      var sx=(si*73+40)%W, sy=(si*131+20)%(GB-40);
+      var tw=0.4+(si%3)*0.3;
+      c.globalAlpha=tw*(0.6+0.4*Math.sin(Date.now()/600+si));
+      c.fillRect(sx,sy,1.5,1.5);
+    }
+    c.globalAlpha=1;
+  }
+  /* 樱花主题: 飘落花瓣(简化) */
+  if(th.id==='pink'){
+    c.fillStyle='rgba(244,114,182,.5)';
+    for(var pi=0;pi<18;pi++){
+      var px=(pi*97+60)%W, py=(pi*151+Date.now()/18)%H;
+      c.beginPath();c.arc(px,py,2.5,0,Math.PI*2);c.fill();
+    }
+  }
 
-  c.fillStyle='rgba(224,242,254,.45)';
+  c.fillStyle=th.board;
   c.fillRect(GL,GT,GW,GB-GT);
-  c.strokeStyle='rgba(147,197,253,.12)';c.lineWidth=1;
+  c.strokeStyle=th.line;c.lineWidth=1;
   for(var y=GT;y<GB;y+=22){c.beginPath();c.moveTo(GL,y);c.lineTo(GR,y);c.stroke();}
 
   c.save();c.setLineDash([6,4]);
@@ -818,6 +908,12 @@ function render(c){
   c.fillStyle='#1e293b';c.font='12px sans-serif';c.textAlign='center';c.textBaseline='middle';
   c.fillText('\u270F\uFE0F \u540D',W-26,55);
 
+  /* 背景切换按钮 */
+  c.fillStyle='rgba(255,255,255,.88)';rr(c,W-48,74,44,28,14);c.fill();
+  c.strokeStyle='rgba(100,116,139,.3)';c.lineWidth=1;rr(c,W-48,74,44,28,14);c.stroke();
+  c.fillStyle='#1e293b';c.font='11px sans-serif';c.textAlign='center';c.textBaseline='middle';
+  c.fillText('\uD83C\uDF3F \u80CC\u666F',W-26,89);
+
   c.fillStyle='#475569';c.font='12px sans-serif';c.textAlign='left';c.textBaseline='middle';
   c.fillText('\u4E0B\u4E00\u4E2A:',12,54);
   drawBall(c,72,54,nxt,.45,1);
@@ -853,33 +949,52 @@ function render(c){
 
   if(over){
     c.fillStyle='rgba(15,23,42,.72)';c.fillRect(GL,GT,GW,GB-GT);
-    c.fillStyle='rgba(255,255,255,.95)';rr(c,55,H/2-115,W-110,240,16);c.fill();
+    c.fillStyle='rgba(255,255,255,.95)';rr(c,55,H/2-125,W-110,260,16);c.fill();
     c.textAlign='center';c.textBaseline='middle';
     c.fillStyle='#ef4444';c.font='bold 26px sans-serif';
-    c.fillText('\u6E38\u620F\u7ED3\u675F',W/2,H/2-75);
+    c.fillText('\u6E38\u620F\u7ED3\u675F',W/2,H/2-82);
     c.fillStyle='#334155';c.font='bold 22px sans-serif';
-    c.fillText('\u5F97\u5206: '+score,W/2,H/2-35);
+    c.fillText('\u5F97\u5206: '+score,W/2,H/2-45);
     if(score>=best&&score>0){
       c.fillStyle='#f59e0b';c.font='bold 15px sans-serif';
-      c.fillText('\uD83C\uDFC6 \u65B0\u7EAA\u5F55\uFF01',W/2,H/2-5);
+      c.fillText('\uD83C\uDFC6 \u65B0\u7EAA\u5F55\uFF01',W/2,H/2-16);
     }else{
       c.fillStyle='#64748b';c.font='14px sans-serif';
-      c.fillText('\u6700\u9AD8: '+best,W/2,H/2-5);
+      c.fillText('\u6700\u9AD8: '+best,W/2,H/2-16);
     }
-    if(maxReached>0){
-      c.fillStyle='#64748b';c.font='13px sans-serif';
-      c.fillText('\u6700\u9AD8\u5408\u6210: '+TIERS[maxReached].full,W/2,H/2+22);
+    /* 最大合成学校(始终显示,带校徽) */
+    var maxTier=maxReached>0?maxReached:0;
+    var md=TIERS[maxTier];
+    c.fillStyle='#475569';c.font='12px sans-serif';
+    c.fillText('\u672C\u5C40\u6700\u5927\u5408\u6210',W/2,H/2+10);
+    /* 画小校徽 */
+    var iconR=16;
+    var iconImg=ASSETS[maxTier];
+    if(iconImg && iconImg.complete && iconImg.naturalWidth>0){
+      c.save();
+      c.beginPath();c.arc(W/2-52,H/2+30,iconR,0,Math.PI*2);c.clip();
+      c.drawImage(iconImg,W/2-52-iconR,H/2+30-iconR,iconR*2,iconR*2);
+      c.restore();
+      c.beginPath();c.arc(W/2-52,H/2+30,iconR,0,Math.PI*2);
+      c.strokeStyle=md.color;c.lineWidth=2;c.stroke();
+    }else{
+      c.fillStyle=md.color;
+      c.beginPath();c.arc(W/2-52,H/2+30,iconR,0,Math.PI*2);c.fill();
+      c.fillStyle='#fff';c.font='bold 12px sans-serif';
+      c.fillText(md.name,W/2-52,H/2+31);
     }
+    c.fillStyle='#1e293b';c.font='bold 15px sans-serif';
+    c.fillText(md.full,W/2+8,H/2+30);
     if(pendingRank>0){
       c.fillStyle='#0284c7';c.font='bold 14px sans-serif';
-      c.fillText('\u5168\u7F51\u6392\u540D: \u7B2C '+pendingRank+' \u540D / '+rankTotal+' \u4EBA',W/2,H/2+44);
+      c.fillText('\u5168\u7F51\u6392\u540D: \u7B2C '+pendingRank+' \u540D / '+rankTotal+' \u4EBA',W/2,H/2+58);
     }else if(score>0){
       c.fillStyle='#94a3b8';c.font='13px sans-serif';
-      c.fillText('\u6210\u7EE9\u4E0A\u4F20\u4E2D\u2026',W/2,H/2+44);
+      c.fillText('\u6210\u7EE9\u4E0A\u4F20\u4E2D\u2026',W/2,H/2+58);
     }
-    c.fillStyle='#3b82f6';rr(c,W/2-55,H/2+60,110,38,10);c.fill();
+    c.fillStyle='#3b82f6';rr(c,W/2-55,H/2+74,110,38,10);c.fill();
     c.fillStyle='#fff';c.font='bold 15px sans-serif';
-    c.fillText('\u518D\u6765\u4E00\u6B21',W/2,H/2+79);
+    c.fillText('\u518D\u6765\u4E00\u6B21',W/2,H/2+93);
   }
 
   c.restore();
@@ -907,6 +1022,12 @@ if(document.hidden) {
 
 loadLeaderboard();
 if(!getNick()) setTimeout(function(){openNickModal('start');},400);
+
+/* 初始化背景主题 */
+(function(){
+  var th=currentTheme();
+  document.body.style.background=th.css;
+})();
 
 })();
 </script>
